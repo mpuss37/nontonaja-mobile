@@ -19,6 +19,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.example.nonton_aja.data.IDLIXRequest
 import com.example.nonton_aja.data.SearchItem
@@ -318,17 +320,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         savedPosition = exoPlayer?.currentPosition ?: 0L
         exoPlayer?.release()
 
-        val mediaItemBuilder = MediaItem.Builder()
-            .setUri(Uri.parse(url))
+        val videoSource = DefaultMediaSourceFactory(httpFactory)
+            .createMediaSource(MediaItem.fromUri(Uri.parse(url)))
 
-        if (subtitleFile != null && subtitleFile.exists() && isSubtitleVisible) {
+        val finalSource = if (subtitleFile != null && subtitleFile.exists() && isSubtitleVisible) {
+            Log.d(TAG, "Merging subtitle: ${subtitleFile.name} (${subtitleFile.length()} bytes)")
             val subConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(subtitleFile))
                 .setMimeType(MimeTypes.TEXT_VTT)
                 .setLabel("Indonesian")
                 .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                 .build()
-            mediaItemBuilder.setSubtitleConfigurations(listOf(subConfig))
-            Log.d(TAG, "Subtitle attached: ${subtitleFile.name}")
+            val subSource = SingleSampleMediaSource.Factory(httpFactory)
+                .createMediaSource(subConfig, C.TIME_END_OF_SOURCE)
+            MergingMediaSource(videoSource, subSource)
+        } else {
+            videoSource
         }
 
         val selector = DefaultTrackSelector(context)
@@ -340,9 +346,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
         val player = ExoPlayer.Builder(context)
             .setTrackSelector(selector)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
             .build().apply {
-                setMediaItem(mediaItemBuilder.build())
+                setMediaSource(finalSource)
                 prepare()
                 playWhenReady = true
                 if (savedPosition > 0) {
