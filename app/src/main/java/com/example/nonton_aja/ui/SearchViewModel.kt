@@ -44,18 +44,21 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         if (query.length >= 2) {
             searchWithDebounce(query)
         } else {
-            _uiState.value = _uiState.value.copy(suggestions = emptyList())
+            _uiState.value = _uiState.value.copy(suggestions = emptyList(), isSearching = false)
         }
     }
 
     private fun searchWithDebounce(query: String) {
         searchJob?.cancel()
+        _uiState.value = _uiState.value.copy(isSearching = true)
         searchJob = viewModelScope.launch {
             delay(300)
             try {
                 val response = repository.search(query, 1, 10, "lk21")
-                _uiState.value = _uiState.value.copy(suggestions = response.results)
-            } catch (_: Exception) { }
+                _uiState.value = _uiState.value.copy(suggestions = response.results, isSearching = false)
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(isSearching = false)
+            }
         }
     }
 
@@ -145,6 +148,7 @@ data class SearchUiState(
     val recentSearches: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
+    val isSearching: Boolean = false,
     val hasMore: Boolean = false,
     val error: String? = null
 )

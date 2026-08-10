@@ -9,30 +9,47 @@
     android:paddingTop="24dp">
 
     <!-- Search Bar -->
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/searchInputLayout"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_margin="12dp"
-        app:boxBackgroundColor="#1B1B1B"
-        app:boxStrokeColor="#444444"
-        app:endIconMode="clear_text"
-        app:hintTextColor="#888888"
-        app:startIconDrawable="@android:drawable/ic_menu_search">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_margin="12dp">
 
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/searchInput"
-            android:layout_width="match_parent"
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/searchInputLayout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:background="@android:color/transparent"
-            android:imeOptions="actionSearch"
-            android:inputType="text"
-            android:maxLines="1"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#888888" />
+            android:layout_weight="1"
+            app:boxBackgroundColor="#1B1B1B"
+            app:boxStrokeColor="#444444"
+            app:endIconMode="clear_text"
+            app:hintTextColor="#888888"
+            app:startIconDrawable="@android:drawable/ic_menu_search">
 
-    </com.google.android.material.textfield.TextInputLayout>
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/searchInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@android:color/transparent"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <ProgressBar
+            android:id="@+id/searchProgressBar"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="8dp"
+            android:indeterminateTint="#E50914"
+            android:visibility="gone" />
+
+    </LinearLayout>
 
     <!-- Content area -->
     <FrameLayout

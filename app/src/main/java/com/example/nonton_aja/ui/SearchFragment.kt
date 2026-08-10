@@ -37,6 +37,7 @@ class SearchFragment : Fragment() {
     private lateinit var errorText: TextView
     private lateinit var loadMoreProgress: ProgressBar
     private lateinit var searchInput: EditText
+    private lateinit var searchProgressBar: ProgressBar
 
     var onFilmClick: ((com.example.nonton_aja.data.SearchItem) -> Unit)? = null
 
@@ -57,6 +58,7 @@ class SearchFragment : Fragment() {
         progressBar = view.findViewById(R.id.progressBar)
         errorText = view.findViewById(R.id.errorText)
         loadMoreProgress = view.findViewById(R.id.loadMoreProgress)
+        searchProgressBar = view.findViewById(R.id.searchProgressBar)
 
         // Setup adapters
         filmAdapter = FilmAdapter { item -> onFilmClick?.invoke(item) }
@@ -122,6 +124,7 @@ class SearchFragment : Fragment() {
                     errorText.isVisible = state.error != null && state.results.isEmpty()
                     errorText.text = state.error ?: ""
                     loadMoreProgress.isVisible = state.isLoadingMore
+                    searchProgressBar.isVisible = state.isSearching
                 }
             }
         }
