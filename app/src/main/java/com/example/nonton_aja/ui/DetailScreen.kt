@@ -90,7 +90,7 @@ private fun DetailHeroBanner(item: SearchItem) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(300.dp)
+            .height(350.dp)
     ) {
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
@@ -98,8 +98,9 @@ private fun DetailHeroBanner(item: SearchItem) {
                 .crossfade(true)
                 .build(),
             contentDescription = item.title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            contentScale = ContentScale.FillWidth,
+            alignment = Alignment.TopCenter,
+            modifier = Modifier.fillMaxWidth()
         )
 
         Box(
@@ -107,8 +108,8 @@ private fun DetailHeroBanner(item: SearchItem) {
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, BgDark),
-                        startY = 100f
+                        colors = listOf(Color.Transparent, Color.Transparent, BgDark),
+                        startY = 150f
                     )
                 )
         )

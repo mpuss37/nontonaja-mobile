@@ -165,6 +165,23 @@ private fun PlayerContent(
                 )
 
                 // === LAYER 2: Progress + timestamp (above bottom controls, auto-hide) ===
+                // Small switching quality indicator
+                if (vm.isSwitchingQuality) {
+                    Row(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                            .background(Color.Black.copy(0.6f), CircleShape)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = RedPrimary, strokeWidth = 2.dp
+                        )
+                        Text(vm.loadingMessage, color = Color.White, fontSize = 11.sp)
+                    }
+                }
+
                 Column(
                     modifier = Modifier.align(Alignment.BottomStart)
                         .padding(horizontal = 16.dp, vertical = 48.dp)
@@ -263,7 +280,7 @@ private fun PlayerContent(
                             DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
                                 // Quality
                                 Text("  Quality", color = RedPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                listOf(480 to "480p (LK21)", 720 to "720p (FlixHQ)", 1080 to "1080p (FlixHQ)").forEach { (v, l) ->
+                                listOf(480 to "480p (LK21)", 720 to "720p (IDLIX)", 1080 to "1080p (IDLIX)").forEach { (v, l) ->
                                     DropdownMenuItem(text = { Text(l) },
                                         leadingIcon = { if (vm.selectedQualityLabel == "${v}p") Icon(Icons.Default.Check, null) else null },
                                         onClick = { vm.changeQuality(v); showSettings = false })

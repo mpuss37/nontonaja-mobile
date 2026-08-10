@@ -13,7 +13,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
@@ -58,11 +57,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var playbackSpeed: Float by mutableFloatStateOf(1f)
         private set
-    var selectedQualityLabel: String by mutableStateOf("480p")
+    var selectedQualityLabel: String by mutableStateOf("")
         private set
     var isScreenLocked: Boolean by mutableStateOf(false)
         private set
-    var isSubtitleVisible: Boolean by mutableStateOf(true)
+    var isSubtitleVisible: Boolean by mutableStateOf(false)
+        private set
+    var isSwitchingQuality: Boolean by mutableStateOf(false)
         private set
 
     var availableAudioTracks: List<AudioTrackOption> by mutableStateOf(emptyList())
@@ -82,10 +83,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return dir
     }
 
-    private fun subtitleCacheKey(source: String, mediaId: String, lang: String): String {
-        return "${source}_${mediaId}_$lang".replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
-    }
-
     fun loadItem(item: SearchItem) {
         currentItem = item
         if (streamUrl == null) {
@@ -95,46 +92,60 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun loadStream(quality: Int) {
         val item = currentItem ?: return
-        val source = if (quality == 480) "lk21" else "flixhq"
-        var mediaId = item.sources[source]
+        error = null
 
-        if (source == "flixhq" && mediaId == null) {
-            viewModelScope.launch {
-                try {
-                    loadingMessage = "Mencari film di FlixHQ..."
-                    isLoading = true
-                    val flixId = repository.searchFilm(item.title, "flixhq")
-                    Log.d(TAG, "searchFilm result: $flixId for '${item.title}'")
-                    if (flixId != null) {
-                        loadStreamWithId("flixhq", flixId, quality)
-                    } else {
-                        Log.d(TAG, "FlixHQ not found, fallback to LK21")
-                        loadStreamWithId("lk21", item.id, 480)
+        if (quality == 480) {
+            // LK21 langsung
+            val lk21Id = item.sources["lk21"] ?: item.id
+            isSubtitleVisible = false
+            startLoad("lk21", lk21Id, quality, showFullLoading = streamUrl == null)
+        } else {
+            // IDLIX untuk 720p/1080p
+            val idlixId = item.sources["idlix"]
+            if (idlixId != null) {
+                isSubtitleVisible = true
+                startLoad("idlix", idlixId, quality, showFullLoading = streamUrl == null)
+            } else {
+                // Fallback search IDLIX
+                viewModelScope.launch {
+                    try {
+                        loadingMessage = "Mencari film di IDLIX..."
+                        if (streamUrl == null) isLoading = true else isSwitchingQuality = true
+                        val foundId = repository.searchFilm(item.title, "idlix")
+                        if (foundId != null) {
+                            isSubtitleVisible = true
+                            startLoad("idlix", foundId, quality, showFullLoading = streamUrl == null)
+                        } else {
+                            // Fallback LK21
+                            isSubtitleVisible = false
+                            startLoad("lk21", item.sources["lk21"] ?: item.id, 480, showFullLoading = streamUrl == null)
+                        }
+                    } catch (e: Exception) {
+                        error = e.message
+                        isLoading = false
+                        isSwitchingQuality = false
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "searchFilm error: ${e.message}")
-                    error = "Gagal mencari di FlixHQ: ${e.message}"
-                    isLoading = false
                 }
             }
-            return
         }
-
-        loadStreamWithId(source, mediaId ?: item.id, quality)
     }
 
-    private fun loadStreamWithId(source: String, mediaId: String, quality: Int) {
+    private fun startLoad(source: String, mediaId: String, quality: Int, showFullLoading: Boolean) {
         currentSource = source
         currentMediaId = mediaId
         selectedQualityLabel = "${quality}p"
-        isLoading = true
+        if (showFullLoading) {
+            isLoading = true
+        } else {
+            isSwitchingQuality = true
+        }
         error = null
 
         viewModelScope.launch {
-            val countdownJob = if (source == "flixhq") {
+            val countdownJob = if (source == "idlix") {
                 launch {
                     countdown = 20
-                    while (countdown > 0 && isLoading) {
+                    while (countdown > 0 && (isLoading || isSwitchingQuality)) {
                         delay(1000)
                         countdown--
                     }
@@ -143,20 +154,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
             try {
                 loadingMessage = "Loading ${quality}p dari $source..."
-                val response = repository.getStream(source, currentMediaId)
-                streamUrl = response.streamUrl
-                playerHeaders = response.headers
 
-                loadingMessage = "Mencari subtitle..."
-                val subFile = downloadSubtitleToCache()
-
-                initPlayer(response.streamUrl, response.headers, subFile)
-                isLoading = false
-                Log.d(TAG, "Stream OK, subtitle cached: ${subFile?.name}")
+                if (source == "idlix") {
+                    loadIdlixStream(mediaId, quality)
+                } else {
+                    loadLk21Stream(mediaId, quality)
+                }
             } catch (e: Exception) {
                 error = e.message
                 Log.e(TAG, "Failed: ${e.message}")
                 isLoading = false
+                isSwitchingQuality = false
             } finally {
                 countdownJob?.cancel()
                 countdown = 0
@@ -164,71 +172,76 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun downloadSubtitleToCache(): File? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val subResponse = repository.getSubtitles(currentSource, currentMediaId)
-                val allSubs = subResponse.subtitles
-
-                val targetSub = allSubs.firstOrNull { it.language == "id" }
-                    ?: allSubs.firstOrNull { it.language == "en" }
-                    ?: allSubs.firstOrNull()
-
-                if (targetSub == null) {
-                    Log.d(TAG, "No subtitles from $currentSource, trying IDLIX")
-                    return@withContext tryIdlixSubtitleCache()
-                }
-
-                val cacheKey = subtitleCacheKey(currentSource, currentMediaId, targetSub.language)
-                val cached = File(subtitleCacheDir(), "$cacheKey.vtt")
-                if (cached.exists() && cached.length() > 0) {
-                    Log.d(TAG, "Subtitle cache hit: ${cached.name}")
-                    return@withContext cached
-                }
-
-                Log.d(TAG, "Downloading subtitle: ${targetSub.url}")
-                URL(targetSub.url).openStream().use { input ->
-                    cached.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                Log.d(TAG, "Subtitle saved: ${cached.name} (${cached.length()} bytes)")
-                cached
-            } catch (e: Exception) {
-                Log.e(TAG, "Subtitle download failed: ${e.message}")
-                null
-            }
+    private suspend fun loadLk21Stream(mediaId: String, quality: Int) {
+        val response = withContext(Dispatchers.IO) {
+            repository.getStream("lk21", mediaId)
         }
+        streamUrl = response.streamUrl
+        playerHeaders = response.headers
+        initPlayer(response.streamUrl, response.headers, null)
+        isLoading = false
+        isSwitchingQuality = false
+        Log.d(TAG, "LK21 stream OK")
     }
 
-    private suspend fun tryIdlixSubtitleCache(): File? {
-        val idlixId = currentItem?.sources?.get("idlix") ?: return null
-        return try {
-            val job = repository.startIdlixStream(
-                IDLIXRequest(contentId = idlixId, contentType = "movie")
-            )
-            var attempts = 0
-            while (attempts < 30) {
-                delay(2000)
-                val status = repository.getJobStatus(job.jobId)
-                if (status.status == "ready") {
-                    val idSub = status.subtitles.firstOrNull { it.language == "id" }
-                        ?: status.subtitles.firstOrNull() ?: return null
-                    val cacheKey = subtitleCacheKey("idlix", idlixId, idSub.language)
-                    val cached = File(subtitleCacheDir(), "$cacheKey.vtt")
-                    if (cached.exists() && cached.length() > 0) return cached
+    private suspend fun loadIdlixStream(mediaId: String, quality: Int) {
+        val streamResponse = withContext(Dispatchers.IO) {
+            repository.startIdlixStream(IDLIXRequest(contentId = mediaId, contentType = "movie"))
+        }
+        Log.d(TAG, "IDLIX job: ${streamResponse.jobId}")
 
-                    URL(idSub.url).openStream().use { input ->
-                        cached.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    return cached
-                }
-                if (status.status == "error") return null
-                attempts++
+        var attempts = 0
+        while (attempts < 40) {
+            delay(2000)
+            val status = withContext(Dispatchers.IO) {
+                repository.getJobStatus(streamResponse.jobId)
             }
-            null
+            Log.d(TAG, "IDLIX status: ${status.status}")
+
+            if (status.status == "ready") {
+                val url = status.streamUrl ?: ""
+                val sub = status.subtitles.firstOrNull { it.language == "id" }
+                    ?: status.subtitles.firstOrNull()
+
+                var subFile: File? = null
+                if (sub != null) {
+                    subFile = withContext(Dispatchers.IO) { downloadSubFile(sub.url, sub.language) }
+                }
+
+                streamUrl = url
+                initPlayer(url, emptyMap(), subFile)
+                isLoading = false
+                isSwitchingQuality = false
+                Log.d(TAG, "IDLIX stream OK, sub: ${subFile?.name}")
+                return
+            }
+            if (status.status == "error") {
+                error = status.error ?: "Gagal load stream"
+                isLoading = false
+                isSwitchingQuality = false
+                return
+            }
+            attempts++
+        }
+        error = "Timeout menunggu stream"
+        isLoading = false
+        isSwitchingQuality = false
+    }
+
+    private fun downloadSubFile(url: String, lang: String): File? {
+        return try {
+            val cacheKey = "${currentSource}_${currentMediaId}_$lang".replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
+            val cached = File(subtitleCacheDir(), "$cacheKey.vtt")
+            if (cached.exists() && cached.length() > 0) return cached
+
+            Log.d(TAG, "Downloading sub: $url")
+            URL(url).openStream().use { input ->
+                cached.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.d(TAG, "Sub cached: ${cached.name} (${cached.length()} bytes)")
+            cached
         } catch (e: Exception) {
-            Log.e(TAG, "IDLIX subtitle error: ${e.message}")
+            Log.e(TAG, "Sub download failed: ${e.message}")
             null
         }
     }
@@ -244,6 +257,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleScreenLock() { isScreenLocked = !isScreenLocked }
+
     fun toggleSubtitle(show: Boolean) {
         isSubtitleVisible = show
         val selector = exoPlayer?.trackSelector as? DefaultTrackSelector ?: return
@@ -271,7 +285,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         streamUrl = null
         error = null
         countdown = 0
-        isSubtitleVisible = true
+        isSubtitleVisible = false
+        isSwitchingQuality = false
         savedPosition = 0
         exoPlayer?.release()
         exoPlayer = null
@@ -290,7 +305,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val mediaItemBuilder = MediaItem.Builder()
             .setUri(Uri.parse(url))
 
-        if (subtitleFile != null && subtitleFile.exists()) {
+        if (subtitleFile != null && subtitleFile.exists() && isSubtitleVisible) {
             val subConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(subtitleFile))
                 .setMimeType(MimeTypes.TEXT_VTT)
                 .setLanguage("id")
@@ -303,7 +318,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val selector = DefaultTrackSelector(context)
         selector.setParameters(
             selector.parameters.buildUpon()
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !isSubtitleVisible)
                 .build()
         )
 
