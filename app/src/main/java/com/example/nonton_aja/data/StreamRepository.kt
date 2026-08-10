@@ -24,16 +24,16 @@ class StreamRepository(
     }
 
     suspend fun searchFilm(title: String, source: String, year: String? = null): String? {
-        // Gunakan judul asli (tanpa strip tahun) supaya search lebih akurat
+        // Cari dengan tahun di judul: "The Raid Redemption 2011"
         val cleanTitle = title.replace(Regex("\\(\\d{4}\\)"), "").trim()
-        Log.d("StreamRepo", "searchFilm: '$cleanTitle' (year=$year) on $source")
+        val searchQuery = if (year != null) "$cleanTitle $year" else cleanTitle
+        Log.d("StreamRepo", "searchFilm: '$searchQuery' on $source")
 
-        val response = searchRepo.search(cleanTitle, 1, 20, source)
+        val response = searchRepo.search(searchQuery, 1, 20, source)
         Log.d("StreamRepo", "Found ${response.results.size} results on $source")
 
         val normalizedQuery = cleanTitle.lowercase().trim()
 
-        // Score: exact title match = 0, contains = index, year match bonus
         val match = response.results
             .filter { it.source == source }
             .minByOrNull { item ->
@@ -48,7 +48,6 @@ class StreamRepository(
                         10 - matched
                     }
                 }
-                // Bonus: kalau tahun cocok, score lebih rendah (lebih baik)
                 val yearBonus = if (year != null && item.year == year) -5 else 0
                 titleScore + yearBonus
             }
