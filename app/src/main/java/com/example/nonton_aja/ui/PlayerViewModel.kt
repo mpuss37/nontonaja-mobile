@@ -306,6 +306,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val mediaItemBuilder = MediaItem.Builder()
             .setUri(Uri.parse(url))
 
+        // IDLIX URL berekstensi .json tapi isinya HLS → force MIME type
+        if (url.contains("majorplay.net") || url.contains(".json")) {
+            mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            Log.d(TAG, "Force HLS mime type for IDLIX URL")
+        }
+
         if (subtitleFile != null && subtitleFile.exists() && isSubtitleVisible) {
             val subConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(subtitleFile))
                 .setMimeType(MimeTypes.TEXT_VTT)
