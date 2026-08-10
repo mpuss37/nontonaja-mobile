@@ -24,13 +24,19 @@ class StreamRepository(
     }
 
     suspend fun searchFilm(title: String, source: String, year: String? = null): String? {
-        // Cari dengan tahun di judul: "The Raid Redemption 2011"
         val cleanTitle = title.replace(Regex("\\(\\d{4}\\)"), "").trim()
-        val searchQuery = if (year != null) "$cleanTitle $year" else cleanTitle
-        Log.d("StreamRepo", "searchFilm: '$searchQuery' on $source")
+        Log.d("StreamRepo", "searchFilm: '$cleanTitle' (year=$year) on $source")
 
-        val response = searchRepo.search(searchQuery, 1, 20, source)
-        Log.d("StreamRepo", "Found ${response.results.size} results on $source")
+        // Cari tanpa tahun dulu — lebih banyak hasil
+        var response = searchRepo.search(cleanTitle, 1, 20, source)
+        Log.d("StreamRepo", "Search without year: ${response.results.size} results")
+
+        // Kalau 0 hasil, coba cari kata kunci penting aja (2 kata pertama)
+        if (response.results.none { it.source == source }) {
+            val shortQuery = cleanTitle.split("\\s+".toRegex()).take(2).joinToString(" ")
+            Log.d("StreamRepo", "Fallback search: '$shortQuery'")
+            response = searchRepo.search(shortQuery, 1, 20, source)
+        }
 
         val normalizedQuery = cleanTitle.lowercase().trim()
 

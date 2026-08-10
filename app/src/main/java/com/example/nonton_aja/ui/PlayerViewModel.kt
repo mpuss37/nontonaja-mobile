@@ -149,14 +149,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     repository.getStream(source, mediaId)
                 }
                 streamUrl = response.streamUrl
-                playerHeaders = response.headers
+                // FlixHQ butuh Referer否则403
+                val finalHeaders = if (response.headers.isEmpty()) {
+                    mapOf(
+                        "Referer" to "https://flixhqz.com/",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                    )
+                } else response.headers
+                playerHeaders = finalHeaders
 
                 loadingMessage = "Mencari subtitle..."
                 val subFile = withContext(Dispatchers.IO) {
                     downloadSubtitleToCache(source, mediaId)
                 }
 
-                initPlayer(response.streamUrl, response.headers, subFile)
+                initPlayer(response.streamUrl, finalHeaders, subFile)
                 isLoading = false
                 isSwitchingQuality = false
                 Log.d(TAG, "Stream OK: ${response.streamUrl}, sub: ${subFile?.name}")
