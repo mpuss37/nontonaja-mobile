@@ -280,7 +280,7 @@ private fun PlayerContent(
                             DropdownMenu(expanded = showSettings, onDismissRequest = { showSettings = false }) {
                                 // Quality
                                 Text("  Quality", color = RedPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                listOf(480 to "480p (LK21)", 720 to "720p (IDLIX)", 1080 to "1080p (IDLIX)").forEach { (v, l) ->
+                                listOf(480 to "480p (LK21)", 720 to "720p (FlixHQ)", 1080 to "1080p (FlixHQ)").forEach { (v, l) ->
                                     DropdownMenuItem(text = { Text(l) },
                                         leadingIcon = { if (vm.selectedQualityLabel == "${v}p") Icon(Icons.Default.Check, null) else null },
                                         onClick = { vm.changeQuality(v); showSettings = false })
