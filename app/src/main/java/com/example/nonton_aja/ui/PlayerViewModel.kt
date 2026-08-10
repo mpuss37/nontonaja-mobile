@@ -111,7 +111,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     try {
                         loadingMessage = "Mencari film di IDLIX..."
                         if (streamUrl == null) isLoading = true else isSwitchingQuality = true
-                        val foundId = repository.searchFilm(item.title, "idlix")
+                        val foundId = repository.searchFilm(item.title, "idlix", item.year)
                         if (foundId != null) {
                             isSubtitleVisible = true
                             startLoad("idlix", foundId, quality, showFullLoading = streamUrl == null)
