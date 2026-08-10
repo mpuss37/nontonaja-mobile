@@ -20,6 +20,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import com.example.nonton_aja.data.IDLIXRequest
 import com.example.nonton_aja.data.SearchItem
 import com.example.nonton_aja.data.StreamRepository
 import kotlinx.coroutines.Dispatchers
@@ -180,37 +181,85 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun downloadSubtitleToCache(source: String, mediaId: String): File? {
-        return try {
-            val subResponse = repository.getSubtitles(source, mediaId)
-            val allSubs = subResponse.subtitles
-            Log.d(TAG, "Got ${allSubs.size} subs from $source")
+        return withContext(Dispatchers.IO) {
+            try {
+                // 1. Coba sub dari source utama (FlixHQ)
+                val subResponse = repository.getSubtitles(source, mediaId)
+                val allSubs = subResponse.subtitles
+                Log.d(TAG, "Got ${allSubs.size} subs from $source")
 
-            val targetSub = allSubs.firstOrNull { it.language == "id" }
-                ?: allSubs.firstOrNull { it.language == "en" }
-                ?: allSubs.firstOrNull()
+                val idSub = allSubs.firstOrNull { it.language == "id" }
+                if (idSub != null) {
+                    return@withContext cacheSubtitle(idSub.url, source, mediaId, idSub.language)
+                }
 
-            if (targetSub == null) {
+                // 2. FlixHQ nggak ada sub id → coba IDLIX
+                Log.d(TAG, "No id sub from $source, trying IDLIX")
+                val idlixSub = fetchIdlixSubtitle()
+                if (idlixSub != null) {
+                    return@withContext idlixSub
+                }
+
+                // 3. Fallback ke en
+                val enSub = allSubs.firstOrNull { it.language == "en" }
+                if (enSub != null) {
+                    return@withContext cacheSubtitle(enSub.url, source, mediaId, enSub.language)
+                }
+
                 Log.d(TAG, "No subs available")
-                return null
+                null
+            } catch (e: Exception) {
+                Log.e(TAG, "Sub download failed: ${e.message}")
+                null
             }
+        }
+    }
 
-            val cacheKey = "${source}_${mediaId}_${targetSub.language}".replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
-            val cached = File(subtitleCacheDir(), "$cacheKey.vtt")
-            if (cached.exists() && cached.length() > 0) {
-                Log.d(TAG, "Sub cache hit: ${cached.name}")
-                return cached
+    private suspend fun fetchIdlixSubtitle(): File? {
+        val idlixId = currentItem?.sources?.get("idlix") ?: return null
+        return try {
+            val job = withContext(Dispatchers.IO) {
+                repository.startIdlixStream(IDLIXRequest(contentId = idlixId, contentType = "movie"))
             }
+            Log.d(TAG, "IDLIX sub job: ${job.jobId}")
 
-            Log.d(TAG, "Downloading sub: ${targetSub.url}")
-            URL(targetSub.url).openStream().use { input ->
-                cached.outputStream().use { output -> input.copyTo(output) }
+            var attempts = 0
+            while (attempts < 30) {
+                delay(2000)
+                val status = withContext(Dispatchers.IO) {
+                    repository.getJobStatus(job.jobId)
+                }
+                if (status.status == "ready") {
+                    val sub = status.subtitles.firstOrNull { it.language == "id" }
+                        ?: return null
+                    Log.d(TAG, "IDLIX sub ready: ${sub.url}")
+                    return withContext(Dispatchers.IO) {
+                        cacheSubtitle(sub.url, "idlix", idlixId, sub.language)
+                    }
+                }
+                if (status.status == "error") return null
+                attempts++
             }
-            Log.d(TAG, "Sub saved: ${cached.name} (${cached.length()} bytes)")
-            cached
+            null
         } catch (e: Exception) {
-            Log.e(TAG, "Sub download failed: ${e.message}")
+            Log.e(TAG, "IDLIX sub error: ${e.message}")
             null
         }
+    }
+
+    private fun cacheSubtitle(url: String, source: String, mediaId: String, lang: String): File? {
+        val cacheKey = "${source}_${mediaId}_${lang}".replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
+        val cached = File(subtitleCacheDir(), "$cacheKey.vtt")
+        if (cached.exists() && cached.length() > 0) {
+            Log.d(TAG, "Sub cache hit: ${cached.name}")
+            return cached
+        }
+        Log.d(TAG, "Downloading sub: $url")
+        URL(url).openStream().use { input ->
+            cached.outputStream().use { output -> input.copyTo(output) }
+        }
+        Log.d(TAG, "Sub saved: ${cached.name} (${cached.length()} bytes)")
+        return cached
     }
 
     fun changeQuality(quality: Int) {
