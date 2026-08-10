@@ -16,6 +16,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -167,7 +168,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 initPlayer(response.streamUrl, finalHeaders, subFile)
                 isLoading = false
                 isSwitchingQuality = false
-                Log.d(TAG, "Stream OK: ${response.streamUrl}, sub: ${subFile?.name}")
+                Log.e(TAG, "Stream OK: ${response.streamUrl}, sub: ${subFile?.name}")
             } catch (e: Exception) {
                 error = e.message
                 Log.e(TAG, "Failed: ${e.message}")
@@ -186,7 +187,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 // 1. Coba sub dari source utama (FlixHQ)
                 val subResponse = repository.getSubtitles(source, mediaId)
                 val allSubs = subResponse.subtitles
-                Log.d(TAG, "Got ${allSubs.size} subs from $source")
+                Log.e(TAG, "Got ${allSubs.size} subs from $source")
 
                 val idSub = allSubs.firstOrNull { it.language == "id" }
                 if (idSub != null) {
@@ -194,7 +195,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 // 2. FlixHQ nggak ada sub id → coba IDLIX
-                Log.d(TAG, "No id sub from $source, trying IDLIX")
+                Log.e(TAG, "No id sub from $source, trying IDLIX")
                 val idlixSub = fetchIdlixSubtitle()
                 if (idlixSub != null) {
                     return@withContext idlixSub
@@ -206,7 +207,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     return@withContext cacheSubtitle(enSub.url, source, mediaId, enSub.language)
                 }
 
-                Log.d(TAG, "No subs available")
+                Log.e(TAG, "No subs available")
                 null
             } catch (e: Exception) {
                 Log.e(TAG, "Sub download failed: ${e.message}")
@@ -221,7 +222,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val job = withContext(Dispatchers.IO) {
                 repository.startIdlixStream(IDLIXRequest(contentId = idlixId, contentType = "movie"))
             }
-            Log.d(TAG, "IDLIX sub job: ${job.jobId}")
+            Log.e(TAG, "IDLIX sub job: ${job.jobId}")
 
             var attempts = 0
             while (attempts < 30) {
@@ -232,7 +233,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (status.status == "ready") {
                     val sub = status.subtitles.firstOrNull { it.language == "id" }
                         ?: return null
-                    Log.d(TAG, "IDLIX sub ready: ${sub.url}")
+                    Log.e(TAG, "IDLIX sub ready: ${sub.url}")
                     return withContext(Dispatchers.IO) {
                         cacheSubtitle(sub.url, "idlix", idlixId, sub.language)
                     }
@@ -251,14 +252,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val cacheKey = "${source}_${mediaId}_${lang}".replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
         val cached = File(subtitleCacheDir(), "$cacheKey.vtt")
         if (cached.exists() && cached.length() > 0) {
-            Log.d(TAG, "Sub cache hit: ${cached.name}")
+            Log.e(TAG, "Sub cache hit: ${cached.name}")
             return cached
         }
-        Log.d(TAG, "Downloading sub: $url")
+        Log.e(TAG, "Downloading sub: $url")
         URL(url).openStream().use { input ->
             cached.outputStream().use { output -> input.copyTo(output) }
         }
-        Log.d(TAG, "Sub saved: ${cached.name} (${cached.length()} bytes)")
+        Log.e(TAG, "Sub saved: ${cached.name} (${cached.length()} bytes)")
         return cached
     }
 
@@ -318,6 +319,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         savedPosition = exoPlayer?.currentPosition ?: 0L
         exoPlayer?.release()
 
+        // DefaultDataSource: file:// → FileDataSource, http:// → httpFactory
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+
         val subConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
         if (subtitleFile != null && subtitleFile.exists() && isSubtitleVisible) {
             val subConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(subtitleFile))
@@ -327,7 +331,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
                 .build()
             subConfigs.add(subConfig)
-            Log.d(TAG, "Subtitle configured: ${subtitleFile.name} (${subtitleFile.length()} bytes)")
+            Log.e(TAG, "Subtitle: ${subtitleFile.name} (${subtitleFile.length()} bytes)")
         }
 
         val mediaItem = MediaItem.Builder()
@@ -345,7 +349,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
         val player = ExoPlayer.Builder(context)
             .setTrackSelector(selector)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build().apply {
                 setMediaItem(mediaItem)
                 prepare()
@@ -378,7 +382,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                                 C.TRACK_TYPE_TEXT -> {
                                     for (i in 0 until g.length) {
                                         val f = g.getTrackFormat(i)
-                                        Log.d(TAG, "Text track: lang=${f.language} label=${f.label} supported=${g.isTrackSupported(i)} mime=${f.sampleMimeType}")
+                                        Log.e(TAG, "Text track: lang=${f.language} label=${f.label} supported=${g.isTrackSupported(i)} mime=${f.sampleMimeType}")
                                     }
                                 }
                             }
@@ -392,7 +396,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 })
             }
         exoPlayer = player
-        Log.d(TAG, "Player init OK: $url, subConfigs=${subConfigs.size}")
+        Log.e(TAG, "Player OK: $url")
     }
 
     fun getPlayer(): ExoPlayer? = exoPlayer
