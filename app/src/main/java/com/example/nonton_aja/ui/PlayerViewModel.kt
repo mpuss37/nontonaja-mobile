@@ -19,6 +19,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.example.nonton_aja.data.IDLIXRequest
 import com.example.nonton_aja.data.SearchItem
@@ -303,23 +305,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         savedPosition = exoPlayer?.currentPosition ?: 0L
         exoPlayer?.release()
 
-        val mediaItemBuilder = MediaItem.Builder()
-            .setUri(Uri.parse(url))
+        val mediaSourceFactory = DefaultMediaSourceFactory(httpFactory)
+        val videoSource = mediaSourceFactory.createMediaSource(
+            MediaItem.Builder()
+                .setUri(Uri.parse(url))
+                .apply {
+                    if (url.contains("majorplay.net") || url.contains(".json")) {
+                        setMimeType(MimeTypes.APPLICATION_M3U8)
+                    }
+                }
+                .build()
+        )
 
-        // IDLIX URL berekstensi .json tapi isinya HLS → force MIME type
-        if (url.contains("majorplay.net") || url.contains(".json")) {
-            mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
-            Log.d(TAG, "Force HLS mime type for IDLIX URL")
-        }
-
-        if (subtitleFile != null && subtitleFile.exists() && isSubtitleVisible) {
+        val finalSource = if (subtitleFile != null && subtitleFile.exists() && isSubtitleVisible) {
+            Log.d(TAG, "Merging subtitle: ${subtitleFile.name} (${subtitleFile.length()} bytes)")
             val subConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(subtitleFile))
                 .setMimeType(MimeTypes.TEXT_VTT)
                 .setLabel("Indonesian")
                 .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                 .build()
-            mediaItemBuilder.setSubtitleConfigurations(listOf(subConfig))
-            Log.d(TAG, "Subtitle attached: ${subtitleFile.name}")
+            val subSource = SingleSampleMediaSource.Factory(httpFactory)
+                .createMediaSource(subConfig, C.TIME_END_OF_SOURCE)
+            MergingMediaSource(videoSource, subSource)
+        } else {
+            videoSource
         }
 
         val selector = DefaultTrackSelector(context)
@@ -331,9 +340,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
         val player = ExoPlayer.Builder(context)
             .setTrackSelector(selector)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
             .build().apply {
-                setMediaItem(mediaItemBuilder.build())
+                setMediaSource(finalSource)
                 prepare()
                 playWhenReady = true
                 if (savedPosition > 0) {
@@ -362,6 +370,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                             }
                         }
                         availableAudioTracks = audioTracks
+                        // Log subtitle track info
+                        for (gi in tracks.groups.indices) {
+                            val g = tracks.groups[gi]
+                            if (g.type == C.TRACK_TYPE_TEXT) {
+                                for (i in 0 until g.length) {
+                                    val f = g.getTrackFormat(i)
+                                    Log.d(TAG, "Text track: ${f.language} / ${f.label} / supported=${g.isTrackSupported(i)}")
+                                }
+                            }
+                        }
                     }
                     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                         Log.e(TAG, "Player error: ${error.message}")
